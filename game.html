@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Biskas Catch Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            margin: 0;
+            background: black;
+            color: white;
+            text-align: center;
+            font-family: Arial;
+        }
+
+        canvas {
+            margin-top: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        #menu {
+            margin-top: 120px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 20px;
+            margin: 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 10px;
+        }
+
+        #mobileControls {
+            display: none;
+            margin-top: 20px;
+        }
+
+        #mobileControls button {
+            font-size: 30px;
+            padding: 20px 40px;
+            margin: 10px;
+            border: none;
+            border-radius: 15px;
+            background: #444;
+            color: white;
+        }
+
+        @media (max-width:768px) {
+            #mobileControls {
+                display: block;
+            }
+        }
+    </style>
+
+</head>
+
+<body>
+
+    <h1>Biskas Catch Game</h1>
+
+    <p>High Score: <span id="highScore">0</span></p>
+
+    <h2>Leaderboard</h2>
+    <ol id="leaderboard"></ol>
+
+    <div id="menu">
+        <button onclick="startGame()">Start Game</button><br>
+        <button onclick="alert('Move with ← → arrows')">Controls</button>
+    </div>
+
+    <p id="scoreUI" style="display:none">
+        Score: <span id="score">0</span>
+        Lives: <span id="lives">3</span>
+    </p>
+
+    <canvas id="game" width="900" height="600"></canvas>
+
+    <div id="mobileControls">
+        <button id="leftBtn">⬅</button>
+        <button id="rightBtn">➡</button>
+    </div>
+
+    <script>
+
+        const canvas = document.getElementById("game")
+        const ctx = canvas.getContext("2d")
+
+        const menu = document.getElementById("menu")
+        const scoreUI = document.getElementById("scoreUI")
+
+        let score = 0
+        let lives = 3
+        let gameOver = false
+        let gameStarted = false
+
+        let items = []
+        let effects = []
+        let explosions = []
+
+        let highScore = localStorage.getItem("highScore") || 0
+        document.getElementById("highScore").innerText = highScore
+
+        /* картинки */
+
+        const playerImg = new Image()
+        playerImg.src = "biskas.png"
+
+        const goodImg = new Image()
+        goodImg.src = "vanessa.png"
+
+        const badImg = new Image()
+        badImg.src = "anomaly.png"
+
+        const bgImg = new Image()
+        bgImg.src = "back.png"
+
+        const goldImg = new Image()
+        goldImg.src = "gold.png"
+
+        /* звук */
+
+        const catchSound = new Audio("catch.mp3")
+
+        const music = new Audio("music.mp3")
+        music.loop = true
+        music.volume = 0.4
+
+        /* игрок */
+
+        let player = {
+            x: canvas.width / 2 - 50,
+            y: canvas.height - 120,
+            width: 100,
+            height: 100,
+            speed: 7
+        }
+
+        /* фон */
+
+        let bgY = 0
+        let bgSpeed = 1
+
+        /* управление */
+
+        let keys = {}
+
+        document.addEventListener("keydown", e => {
+            keys[e.key] = true
+        })
+
+        document.addEventListener("keyup", e => {
+            keys[e.key] = false
+        })
+
+        /* мобильные кнопки */
+
+        const leftBtn = document.getElementById("leftBtn")
+        const rightBtn = document.getElementById("rightBtn")
+
+        leftBtn.addEventListener("touchstart", () => keys["ArrowLeft"] = true)
+        leftBtn.addEventListener("touchend", () => keys["ArrowLeft"] = false)
+
+        rightBtn.addEventListener("touchstart", () => keys["ArrowRight"] = true)
+        rightBtn.addEventListener("touchend", () => keys["ArrowRight"] = false)
+
+        /* старт */
+
+        function startGame() {
+
+            menu.style.display = "none"
+            canvas.style.display = "block"
+            scoreUI.style.display = "block"
+
+            music.play()
+
+            gameStarted = true
+        }
+
+        /* спавн предметов */
+
+        setInterval(() => {
+
+            if (!gameStarted || gameOver) return
+
+            let rand = Math.random()
+
+            let type
+
+            if (rand < 0.05) {
+                type = "gold"
+            } else if (rand < 0.75) {
+                type = "good"
+            } else {
+                type = "bad"
+            }
+
+            items.push({
+                x: Math.random() * (canvas.width - 60),
+                y: -20,
+                size: 60,
+                speed: 2 + Math.random() * 2 + score * 0.1,
+                type: type
+            })
+
+        }, 1000)
+
+        /* обновление */
+
+        function update() {
+
+            if (!gameStarted || gameOver) return
+
+            if (keys["ArrowLeft"]) player.x -= player.speed
+            if (keys["ArrowRight"]) player.x += player.speed
+
+            if (player.x < 0) player.x = 0
+            if (player.x > canvas.width - player.width) player.x = canvas.width - player.width
+
+            for (let i = items.length - 1; i >= 0; i--) {
+
+                let item = items[i]
+
+                item.y += item.speed
+
+                if (
+                    item.y + item.size > player.y &&
+                    item.x < player.x + player.width &&
+                    item.x + item.size > player.x
+                ) {
+
+                    if (item.type === "good") {
+
+                        score++
+
+                    } else if (item.type === "gold") {
+
+                        score += 5
+
+                        effects.push({
+                            x: player.x + player.width / 2,
+                            y: player.y,
+                            life: 60
+                        })
+
+                    } else {
+
+                        lives--
+                        document.getElementById("lives").innerText = lives
+
+                        explosions.push({
+                            x: item.x,
+                            y: item.y,
+                            size: 20,
+                            life: 20
+                        })
+
+                        if (lives <= 0) {
+
+                            gameOver = true
+                            music.pause()
+
+                            if (score > highScore) {
+                                highScore = score
+                                localStorage.setItem("highScore", highScore)
+                            }
+
+                            setTimeout(() => {
+                                alert("💀 Game Over! Score: " + score)
+                                updateLeaderboard()
+                                location.reload()
+                            }, 300)
+
+                        }
+
+                    }
+
+                    items.splice(i, 1)
+                }
+
+                if (item.y > canvas.height) {
+                    items.splice(i, 1)
+                }
+
+            }
+
+            /* фон */
+
+            bgY += bgSpeed
+            if (bgY >= canvas.height) bgY = 0
+
+            /* +1 эффект */
+
+            for (let i = effects.length - 1; i >= 0; i--) {
+
+                let e = effects[i]
+
+                e.y -= 1
+                e.life--
+
+                if (e.life <= 0) {
+                    effects.splice(i, 1)
+                }
+
+            }
+
+            /* взрывы */
+
+            for (let i = explosions.length - 1; i >= 0; i--) {
+
+                let ex = explosions[i]
+
+                ex.size += 3
+                ex.life--
+
+                if (ex.life <= 0) {
+                    explosions.splice(i, 1)
+                }
+
+            }
+
+        }
+
+        /* рисование */
+
+        function draw() {
+
+            if (!gameStarted) return
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+            ctx.drawImage(bgImg, 0, bgY - canvas.height, canvas.width, canvas.height)
+            ctx.drawImage(bgImg, 0, bgY, canvas.width, canvas.height)
+
+            ctx.drawImage(playerImg, player.x, player.y, player.width, player.height)
+
+            for (let item of items) {
+
+                if (item.type === "good") {
+                    ctx.drawImage(goodImg, item.x, item.y, item.size, item.size)
+                } else if (item.type === "gold") {
+                    ctx.drawImage(goldImg, item.x, item.y, item.size, item.size)
+                } else {
+                    ctx.drawImage(badImg, item.x, item.y, item.size, item.size)
+                }
+
+            }
+
+            function updateLeaderboard() {
+
+                let board = JSON.parse(localStorage.getItem("leaderboard")) || []
+
+                board.push(score)
+
+                board.sort((a, b) => b - a)
+
+                board = board.slice(0, 5)
+
+                localStorage.setItem("leaderboard", JSON.stringify(board))
+
+                let list = document.getElementById("leaderboard")
+                list.innerHTML = ""
+
+                for (let s of board) {
+
+                    let li = document.createElement("li")
+                    li.innerText = s
+                    list.appendChild(li)
+
+                }
+
+            }
+
+            /* +1 */
+
+            ctx.fillStyle = "yellow"
+            ctx.font = "30px Arial"
+            ctx.textAlign = "center"
+
+            for (let e of effects) {
+                ctx.fillText("+1", e.x, e.y)
+            }
+
+            /* взрыв */
+
+            ctx.strokeStyle = "red"
+
+            for (let ex of explosions) {
+
+                ctx.beginPath()
+                ctx.arc(ex.x, ex.y, ex.size, 0, Math.PI * 2)
+                ctx.stroke()
+
+            }
+
+        }
+
+        /* игровой цикл */
+
+        function gameLoop() {
+
+            update()
+            draw()
+
+            requestAnimationFrame(gameLoop)
+
+        }
+
+        gameLoop()
+
+    </script>
+
+</body>
+
+</html>
